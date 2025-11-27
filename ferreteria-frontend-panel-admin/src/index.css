@@ -1,0 +1,325 @@
+/* src/index.css - Panel de Administración */
+
+:root {
+  /* Paleta de Colores "Ferretería Pro" */
+  --azul-oscuro: #003366;
+  --azul-medio: #00509E;
+  --azul-claro: #0077BE;
+  --azul-muy-claro: #E6F0FF;
+  --blanco: #FFFFFF;
+  --gris-oscuro: #2C3E50;
+  --gris-medio: #566573;
+  --gris-claro: #F5F7FA;
+  --borde: #E5E8EC;
+  --verde: #27AE60;
+  --naranja: #E67E22;
+  --rojo: #E74C3C;
+  --amarillo: #F1C40F;
+  --sombra: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+body {
+  background-color: var(--gris-claro);
+  color: var(--gris-oscuro);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  line-height: 1.6;
+}
+
+a { text-decoration: none; color: inherit; }
+ul { list-style: none; padding: 0; margin: 0; }
+
+/* --- LAYOUT PRINCIPAL --- */
+.admin-container {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Sidebar Compacto (Estilo Nuevo) */
+.compact-sidebar {
+  width: 80px;
+  background: linear-gradient(180deg, var(--azul-oscuro), var(--azul-medio));
+  color: var(--blanco);
+  transition: width 0.3s;
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 0;
+  overflow-x: hidden; /* Ocultar scroll horizontal al expandir */
+}
+
+.compact-sidebar.expanded {
+  width: 250px;
+  align-items: flex-start; /* Alinear a la izquierda al expandir */
+}
+
+.sidebar-logo {
+  margin-bottom: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 50px; /* Altura fija para el logo */
+}
+
+.compact-sidebar.expanded .sidebar-logo {
+  justify-content: flex-start;
+  padding-left: 20px;
+  gap: 10px;
+}
+
+.logo-icon {
+  font-size: 2rem;
+  display: flex; /* Centrar icono */
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-text {
+  display: none; /* Oculto por defecto */
+  font-weight: bold;
+  font-size: 1.2rem;
+  white-space: nowrap; /* Evitar que se rompa el texto */
+}
+
+.compact-sidebar.expanded .logo-text {
+  display: block; /* Mostrar al expandir */
+}
+
+.compact-menu {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 5px; /* Espacio entre items */
+}
+
+.compact-menu-item {
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  font-size: 0.7rem;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+  width: 100%;
+  cursor: pointer;
+}
+
+.compact-sidebar.expanded .compact-menu-item {
+  flex-direction: row;
+  padding: 12px 20px;
+  font-size: 0.95rem;
+  justify-content: flex-start;
+}
+
+.compact-menu-item:hover, .compact-menu-item.active {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: var(--blanco);
+  border-left-color: var(--blanco);
+}
+
+.menu-icon {
+  font-size: 1.3rem;
+  margin-bottom: 4px;
+  width: 30px; /* Ancho fijo para icono */
+  text-align: center;
+  display: flex;
+  justify-content: center;
+}
+
+.compact-sidebar.expanded .menu-icon {
+  margin-bottom: 0;
+  margin-right: 10px;
+}
+
+.menu-label {
+  /* Agregamos transición para que el cambio de tamaño sea suave */
+  transition: all 0.3s ease;
+  white-space: nowrap; /* Evita que el texto se rompa en dos líneas */
+  overflow: hidden;    /* Oculta el texto si se sale del contenedor */
+}
+
+.compact-sidebar:not(.expanded) .menu-label {
+  font-size: 0.65rem; /* Texto pequeño abajo del icono cuando está cerrado */
+  text-align: center;
+  width: 100%;
+  display: block;
+}
+
+.compact-sidebar.expanded .menu-label {
+    font-size: inherit;
+    text-align: left;
+}
+
+
+/* Contenido Principal (Ajuste de margen) */
+.main-panel {
+  flex: 1;
+  margin-left: 80px; /* Ancho del sidebar cerrado */
+  transition: margin-left 0.3s;
+  width: calc(100% - 80px);
+  display: flex;
+  flex-direction: column;
+}
+
+.main-panel.expanded-margin {
+  margin-left: 250px; /* Ancho del sidebar abierto */
+  width: calc(100% - 250px);
+}
+
+
+/* Header Superior (Navbar Admin) */
+.admin-header {
+  background-color: var(--blanco);
+  padding: 15px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 10px var(--sombra);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: 80px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.sidebar-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--gris-oscuro);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+.sidebar-toggle-btn:hover { background-color: var(--gris-claro); }
+
+.page-title h1 { margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--azul-oscuro); }
+.page-title p { margin: 0; font-size: 0.85rem; color: var(--gris-medio); }
+
+/* Acciones Header Derecho */
+.header-right { display: flex; align-items: center; gap: 20px; }
+.header-actions { display: flex; gap: 10px; }
+
+.header-icon-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  color: var(--gris-medio);
+  cursor: pointer;
+  position: relative;
+  padding: 8px;
+  border-radius: 50%;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.header-icon-btn:hover { background-color: var(--gris-claro); color: var(--azul-medio); }
+
+.badge-notification {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: var(--rojo);
+  color: white;
+  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+}
+
+/* Perfil de Usuario en Header */
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 30px;
+  transition: background 0.2s;
+  border: 1px solid transparent;
+}
+.user-profile:hover { background-color: var(--gris-claro); border-color: var(--borde); }
+
+.avatar-circle {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, var(--azul-medio), var(--azul-oscuro));
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.user-info { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
+.user-name { font-weight: 600; font-size: 0.9rem; color: var(--gris-oscuro); }
+.user-role { font-size: 0.75rem; color: var(--gris-medio); text-transform: uppercase; letter-spacing: 0.5px; }
+
+
+/* Área de Contenido */
+.content-wrapper {
+  padding: 30px;
+  background-color: var(--gris-claro);
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Estilos Generales para Paneles y Tarjetas (Reutilizables) */
+.shaday-panel {
+  background: var(--blanco);
+  border-radius: 12px;
+  padding: 25px;
+  box-shadow: var(--sombra);
+  border: 1px solid rgba(0,0,0,0.02);
+  margin-bottom: 20px;
+}
+
+/* Estilos para Tablas */
+.table-responsive {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.table thead th {
+    background-color: var(--azul-oscuro);
+    color: var(--blanco);
+    font-weight: 600;
+    border: none;
+    padding: 12px 15px;
+}
+
+.table tbody td {
+    vertical-align: middle;
+    padding: 12px 15px;
+    color: var(--gris-oscuro);
+    border-bottom: 1px solid var(--borde);
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0,0,0,0.01);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 80, 158, 0.03);
+}

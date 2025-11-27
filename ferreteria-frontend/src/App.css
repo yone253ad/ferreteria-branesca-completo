@@ -1,0 +1,114 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Nuestra Nueva Paleta de Colores Branesca --- */
+
+/* 1. Define las variables de color */
+:root {
+  --branesca-azul: #0D47A1;
+  --branesca-amarillo: #FFC107;
+  --branesca-gris-claro: #f8f9fa;
+  --branesca-texto-oscuro: #212529;
+}
+
+/* 2. Sobreescribe la Barra de Navegación */
+.navbar[data-bs-theme="dark"] {
+  background-color: var(--branesca-azul) !important;
+}
+
+/* 3. Sobreescribe los Botones Primarios */
+.btn-primary {
+  background-color: var(--branesca-amarillo);
+  border-color: var(--branesca-amarillo);
+  color: var(--branesca-texto-oscuro);
+}
+
+.btn-primary:hover {
+  background-color: #ffca2c;
+  border-color: #ffca2c;
+  color: var(--branesca-texto-oscuro);
+}
+
+/* 4. Sobreescribe los Enlaces */
+a {
+  color: var(--branesca-azul);
+}
+
+a:hover {
+  color: #0b3a82;
+}
+
+/* 5. Estilo para el Banner de Bienvenida */
+.welcome-banner {
+  background-color: var(--branesca-gris-claro);
+  border-radius: 1rem;
+}
+
+
+/* --- Transiciones Suaves y Fluidez --- */
+
+/* 1. Transición base para botones, tarjetas y enlaces */
+.btn, .card, .nav-link {
+  transition: all 0.25s ease-in-out;
+}
+
+/* 2. Efecto "lift" (levantar) al pasar el mouse sobre las tarjetas */
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* 3. Efecto "pulsar" en los botones de la tarjeta */
+.card .btn-primary:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* 4. Efecto en la Navbar (que resalte el amarillo) */
+.navbar-nav .nav-link:hover {
+  color: var(--branesca-amarillo) !important;
+}
+
+/* 5. Efecto en los enlaces (como el título del producto) */
+.card-title a {
+  text-decoration: none;
+}
+.card-title a:hover {
+  text-decoration: underline;
+}
