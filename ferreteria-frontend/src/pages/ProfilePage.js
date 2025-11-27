@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react'; // Importamos useMemo
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext'; // <-- CORREGIDO (..)
+import { useAuth } from '../context/AuthContext';
 import { Container, Card, Form, Button, Alert, Tab, Tabs, ListGroup } from 'react-bootstrap';
-import AddressForm from '../components/AddressForm'; // <-- CORREGIDO (..)
+import AddressForm from '../components/AddressForm';
 
 const API_BASE = 'http://127.0.0.1:8000/api';
 
@@ -17,7 +17,10 @@ function ProfilePage() {
   const [showAddrForm, setShowAddrForm] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const config = { headers: { Authorization: `Bearer ${authToken}` } };
+  // Usamos useMemo para que 'config' sea estable y no cause warnings
+  const config = useMemo(() => ({ 
+    headers: { Authorization: `Bearer ${authToken}` } 
+  }), [authToken]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -31,7 +34,7 @@ function ProfilePage() {
       } catch (err) { console.error("Error perfil"); }
     };
     if (authToken) fetchData();
-  }, [authToken]);
+  }, [authToken, config]); // Ahora es seguro incluir config
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();

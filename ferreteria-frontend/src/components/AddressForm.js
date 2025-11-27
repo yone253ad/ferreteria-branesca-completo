@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { Form, Button, Alert } from 'react-bootstrap';
-import { useAuth } from '../context/AuthContext';
+// Se eliminó useAuth ya que no usábamos axiosApi aquí, usábamos axios directo con token manual
+// import { useAuth } from '../context/AuthContext'; 
 
 const API_URL = 'http://127.0.0.1:8000/api/direcciones/';
 
 function AddressForm({ onAddressAdded, onCancel }) {
-  const { axiosApi } = useAuth();
+  // Eliminamos la línea que causaba el warning:
+  // const { axiosApi } = useAuth(); 
   
   const [formData, setFormData] = useState({
     nombre_completo: '',
@@ -21,23 +23,20 @@ function AddressForm({ onAddressAdded, onCancel }) {
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
-    // Limpia el error del campo cuando el usuario escribe
     if (validationErrors[e.target.name]) {
       setValidationErrors({ ...validationErrors, [e.target.name]: null });
     }
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // --- VALIDACIÓN DE DIRECCIÓN ---
   const validateForm = () => {
     const errors = {};
-    const phoneRegex = /^\d{8}$/; // Exactamente 8 dígitos (ajusta si es necesario, ej: /^\d{8,12}$/)
-    const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/;
+    const phoneRegex = /^\d{8}$/; 
+    const nameRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
 
     if (!nameRegex.test(formData.nombre_completo)) {
       errors.nombre_completo = "El nombre solo puede contener letras.";
     }
-
     if (!phoneRegex.test(formData.telefono)) {
       errors.telefono = "El teléfono debe tener 8 dígitos numéricos.";
     }
@@ -56,7 +55,6 @@ function AddressForm({ onAddressAdded, onCancel }) {
       return;
     }
 
-    // Obtener token manualmente si axiosApi no está en contexto
     const token = localStorage.getItem('accessToken');
     const config = { headers: { Authorization: `Bearer ${token}` } };
 
@@ -66,15 +64,15 @@ function AddressForm({ onAddressAdded, onCancel }) {
       setFormData({ nombre_completo: '', direccion: '', ciudad: '', departamento: '', telefono: '' });
     } catch (err) {
       console.error("Error creando dirección:", err);
-      setError("Error al guardar. Verifica los datos.");
+      setError("Error al guardar la dirección. Verifica los datos.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Form onSubmit={handleSubmit} className="border p-3 rounded bg-light mt-3">
-      <h5 className="mb-3">Nueva Dirección de Envío</h5>
+    <Form onSubmit={handleSubmit} className="border p-3 rounded bg-light mt-3 shadow-sm">
+      <h5 className="mb-3 text-primary">Nueva Dirección de Envío</h5>
       {error && <Alert variant="danger">{error}</Alert>}
 
       <Form.Group className="mb-2">
@@ -87,14 +85,15 @@ function AddressForm({ onAddressAdded, onCancel }) {
           placeholder="Ej: Juan Pérez"
           isInvalid={!!validationErrors.nombre_completo}
         />
-        <Form.Control.Feedback type="invalid">
-          {validationErrors.nombre_completo}
-        </Form.Control.Feedback>
+        <Form.Control.Feedback type="invalid">{validationErrors.nombre_completo}</Form.Control.Feedback>
       </Form.Group>
 
       <Form.Group className="mb-2">
         <Form.Label>Dirección Exacta</Form.Label>
-        <Form.Control as="textarea" rows={2} name="direccion" value={formData.direccion} onChange={handleChange} required placeholder="Barrio, calle, número de casa..." />
+        <Form.Control 
+            as="textarea" rows={2} name="direccion" value={formData.direccion} onChange={handleChange} 
+            required placeholder="Barrio, calle, número de casa..." 
+        />
       </Form.Group>
 
       <div className="d-flex gap-2 mb-2">
@@ -111,16 +110,10 @@ function AddressForm({ onAddressAdded, onCancel }) {
       <Form.Group className="mb-3">
         <Form.Label>Teléfono</Form.Label>
         <Form.Control 
-          name="telefono" 
-          value={formData.telefono} 
-          onChange={handleChange} 
-          required 
-          placeholder="88888888"
-          isInvalid={!!validationErrors.telefono}
+          name="telefono" value={formData.telefono} onChange={handleChange} 
+          required placeholder="88888888" isInvalid={!!validationErrors.telefono}
         />
-        <Form.Control.Feedback type="invalid">
-          {validationErrors.telefono}
-        </Form.Control.Feedback>
+        <Form.Control.Feedback type="invalid">{validationErrors.telefono}</Form.Control.Feedback>
       </Form.Group>
 
       <div className="d-flex justify-content-end gap-2">
