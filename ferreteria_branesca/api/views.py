@@ -247,8 +247,11 @@ class HistorialInventarioView(generics.ListAPIView):
     permission_classes = [permissions.IsAdminUser]
 
     def get_queryset(self):
-        # Traemos los últimos 100 movimientos ordenados por fecha
-        return Inventario.history.select_related('history_user', 'producto', 'sucursal').all().order_by('-history_date')[:100]
+        return Inventario.history.select_related(
+            'history_user', 'producto', 'sucursal'
+        ).defer(
+            'producto__descripcion', 'producto__imagen', 'sucursal__direccion'
+        ).all().order_by('-history_date')[:50]
 class AlertasStockBajoView(generics.ListAPIView):
     serializer_class = InventarioSerializer; permission_classes = [permissions.IsAdminUser]
     def get_queryset(self): return Inventario.objects.filter(cantidad__lte=10).order_by('cantidad')

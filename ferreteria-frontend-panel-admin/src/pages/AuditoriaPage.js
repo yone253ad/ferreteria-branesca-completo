@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Table, Spinner, Alert, Badge, Form, InputGroup } from 'react-bootstrap';
-import { FileText, Search, User, Calendar, Clock } from 'lucide-react';
+import { Table, Spinner, Alert, Badge, Button, Form, InputGroup } from 'react-bootstrap';
+import { FileText, Search, User, RefreshCw, MapPin } from 'lucide-react'; // Se eliminó 'Layers'
 
 function Auditoria() {
   const [historial, setHistorial] = useState([]);
@@ -10,57 +10,57 @@ function Auditoria() {
   const [searchTerm, setSearchTerm] = useState('');
   const auth = useAuth();
 
-  useEffect(() => {
-    const fetchHistorial = async () => {
-      try {
-        setLoading(true);
-        // Asegúrate de que esta URL coincida con tu urls.py
-        const response = await auth.axiosApi.get('/historial-inventario/');
-        setHistorial(response.data);
-        setLoading(false);
-      } catch (err) {
-        console.error("Error cargando auditoría:", err);
-        setError("No se pudieron cargar los registros de auditoría.");
-        setLoading(false);
-      }
-    };
-    fetchHistorial();
-  }, [auth.axiosApi]);
+  // Usamos useCallback para que la función sea estable y no cause warnings
+  const fetchHistorial = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      // Petición ligera
+      const response = await auth.axiosApi.get('/historial-inventario/');
+      setHistorial(response.data);
+    } catch (err) {
+      console.error(err);
+      setError("Error de conexión al cargar auditoría.");
+    } finally {
+      setLoading(false);
+    }
+  }, [auth.axiosApi]); // Dependencia correcta
 
-  // Función para traducir el tipo de cambio
+  useEffect(() => { 
+    fetchHistorial(); 
+  }, [fetchHistorial]); // Ahora sí podemos incluirla en el array
+
   const getTipoCambio = (tipo) => {
       switch(tipo) {
           case '+': return <Badge bg="success">Creación</Badge>;
-          case '~': return <Badge bg="warning" text="dark">Modificación</Badge>;
-          case '-': return <Badge bg="danger">Eliminación</Badge>;
-          default: return <Badge bg="secondary">Desconocido</Badge>;
+          case '~': return <Badge bg="warning" text="dark">Ajuste</Badge>;
+          case '-': return <Badge bg="danger">Borrado</Badge>;
+          default: return <Badge bg="secondary">?</Badge>;
       }
   };
 
-  // Filtrado local por producto o usuario
   const registrosFiltrados = historial.filter(item => {
       const term = searchTerm.toLowerCase();
-      const prod = item.producto_nombre ? item.producto_nombre.toLowerCase() : ''; // Ajusta según tu serializer
-      const user = item.history_user_username ? item.history_user_username.toLowerCase() : '';
-      return prod.includes(term) || user.includes(term);
+      return (item.producto_nombre?.toLowerCase() || '').includes(term) || 
+             (item.usuario?.toLowerCase() || '').includes(term);
   });
-
-  if (loading) return <div className="text-center mt-5"><Spinner animation="border" variant="primary" /> <p className="mt-2 text-muted">Cargando registros...</p></div>;
-  if (error) return <Alert variant="danger" className="m-3">{error}</Alert>;
 
   return (
     <div className="p-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
+      <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div>
-            <h2 className="mb-1"><FileText size={28} className="me-2"/>Auditoría de Inventario</h2>
-            <p className="text-muted mb-0">Rastro de movimientos y cambios de stock.</p>
+            <h2 className="mb-1 d-flex align-items-center gap-2"><FileText size={28}/> Auditoría</h2>
+            <p className="text-muted mb-0 small">Últimos 50 movimientos de stock.</p>
         </div>
         
-        <div style={{width: '300px'}}>
-            <InputGroup>
+        <div className="d-flex gap-2">
+            <Button variant="light" onClick={fetchHistorial} disabled={loading} title="Actualizar lista">
+                <RefreshCw size={20} className={loading ? "spin-anim" : ""} />
+            </Button>
+            <InputGroup style={{width: '250px'}}>
                 <InputGroup.Text className="bg-white"><Search size={18}/></InputGroup.Text>
                 <Form.Control 
-                    placeholder="Buscar por producto o usuario..." 
+                    placeholder="Buscar..." 
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
@@ -68,11 +68,13 @@ function Auditoria() {
         </div>
       </div>
 
+      {error && <Alert variant="danger">{error}</Alert>}
+
       <div className="bg-white shadow-sm rounded overflow-hidden">
-        <Table hover responsive className="mb-0 align-middle">
-          <thead className="bg-light text-secondary">
+        <Table hover responsive className="mb-0 align-middle size-sm">
+          <thead className="bg-light text-secondary small text-uppercase">
             <tr>
-              <th>Fecha y Hora</th>
+              <th>Fecha</th>
               <th>Usuario</th>
               <th>Acción</th>
               <th>Producto</th>
@@ -81,35 +83,25 @@ function Auditoria() {
             </tr>
           </thead>
           <tbody>
-            {registrosFiltrados.length === 0 ? (
-                <tr><td colSpan="6" className="text-center py-5 text-muted">No se encontraron registros recientes.</td></tr>
+            {loading ? (
+                <tr><td colSpan="6" className="text-center py-5"><Spinner animation="border" variant="primary" /></td></tr>
+            ) : registrosFiltrados.length === 0 ? (
+                <tr><td colSpan="6" className="text-center py-4 text-muted">Sin resultados.</td></tr>
             ) : (
-                registrosFiltrados.map((record) => (
-                <tr key={record.history_id}>
+                registrosFiltrados.map((item) => (
+                <tr key={item.history_id}>
+                    <td className="text-nowrap small text-muted">{item.fecha}</td>
                     <td>
-                        <div className="d-flex align-items-center">
-                            <Calendar size={14} className="me-1 text-muted"/>
-                            <span className="me-2">{new Date(record.history_date).toLocaleDateString()}</span>
-                            <Clock size={14} className="me-1 text-muted"/>
-                            <small>{new Date(record.history_date).toLocaleTimeString()}</small>
+                        <div className="d-flex align-items-center gap-2">
+                            <div className="bg-light rounded-circle p-1"><User size={12}/></div>
+                            <span className="fw-bold small">{item.usuario}</span>
                         </div>
                     </td>
-                    <td>
-                        <div className="d-flex align-items-center">
-                            <User size={16} className="me-2 text-primary"/>
-                            {/* Manejo seguro: Si el usuario es null (ej. cambio sistema), muestra Sistema */}
-                            <span className="fw-bold">{record.history_user_username || 'Sistema/Admin'}</span>
-                        </div>
-                    </td>
-                    <td>{getTipoCambio(record.history_type)}</td>
-                    {/* Ajusta estos campos según lo que devuelve tu backend exactamente. 
-                        Si usaste depth=1 en serializer, accede a record.producto.nombre */}
-                    <td className="fw-bold text-dark">
-                        {record.producto_nombre || record.producto || 'Producto Eliminado'}
-                    </td>
-                    <td>{record.sucursal_nombre || record.sucursal || '-'}</td>
+                    <td>{getTipoCambio(item.history_type)}</td>
+                    <td><span className="fw-bold text-dark">{item.producto_nombre}</span></td>
+                    <td className="small text-muted"><MapPin size={12} className="me-1"/>{item.sucursal_nombre}</td>
                     <td className="text-end">
-                        <Badge bg="info" style={{fontSize: '0.9em'}}>{record.cantidad}</Badge>
+                        <Badge bg="info" className="px-3">{item.cantidad}</Badge>
                     </td>
                 </tr>
                 ))
@@ -117,9 +109,11 @@ function Auditoria() {
           </tbody>
         </Table>
       </div>
-      <div className="mt-3 text-muted small text-end">
-          Mostrando los últimos 100 movimientos.
-      </div>
+      
+      <style>{`
+        .spin-anim { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }

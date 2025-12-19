@@ -83,14 +83,16 @@ class AdminPedidoSerializer(serializers.ModelSerializer):
     class Meta: model = Pedido; fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'estado', 'detalles', 'transaction_id', 'metodo_pago'); read_only_fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'detalles', 'transaction_id', 'metodo_pago')
 
 class HistoricalInventarioSerializer(serializers.ModelSerializer):
-    # Campos calculados para que el frontend reciba TEXTO y no NUMEROS
+    # Campos calculados (Solo texto simple, nada de objetos pesados)
     producto_nombre = serializers.ReadOnlyField(source='instance.producto.nombre', default='-')
     sucursal_nombre = serializers.ReadOnlyField(source='instance.sucursal.nombre', default='-')
-    history_user_username = serializers.ReadOnlyField(source='history_user.username', default='Sistema')
+    usuario = serializers.ReadOnlyField(source='history_user.username', default='Sistema')
+    fecha = serializers.DateTimeField(source='history_date', format="%d/%m/%Y %H:%M") # Formateamos la fecha aquí directo
 
     class Meta:
         model = Inventario.history.model
-        fields = '__all__'
+        # Solo enviamos lo estrictamente necesario
+        fields = ['history_id', 'fecha', 'usuario', 'history_type', 'producto_nombre', 'sucursal_nombre', 'cantidad']
 
 class CarritoItemSerializer(serializers.ModelSerializer):
     producto_detalle = ProductoSerializer(source='producto', read_only=True)
