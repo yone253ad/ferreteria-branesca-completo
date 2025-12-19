@@ -134,6 +134,27 @@ function GestionUsuarios() {
                 </div>
             </div>
             <div className="d-grid mt-3"><Button type="submit" variant="primary">Guardar</Button></div>
+            <div className="d-flex gap-3">
+              <Form.Group className="mb-3 flex-grow-1">
+                  <Form.Label>Límite Crédito (C$)</Form.Label>
+                  <Form.Control 
+                      type="number" 
+                      value={formData.limite_credito || 0} 
+                      onChange={e => setFormData({...formData, limite_credito: e.target.value})} 
+                  />
+              </Form.Group>
+
+              <Form.Group className="mb-3 flex-grow-1">
+                  <Form.Label>Plazo (Días)</Form.Label>
+                  <Form.Control 
+                      type="number" 
+                      placeholder="Ej: 15, 30"
+                      value={formData.dias_credito || 0} 
+                      onChange={e => setFormData({...formData, dias_credito: e.target.value})} 
+                  />
+                  <Form.Text className="text-muted">Días para pagar tras compra.</Form.Text>
+              </Form.Group>
+          </div>
           </Form>
         </Modal.Body>
       </Modal>
