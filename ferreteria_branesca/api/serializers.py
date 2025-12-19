@@ -46,12 +46,23 @@ class RegistroUsuarioSerializer(serializers.ModelSerializer):
 
 class GestionUsuarioSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
-    class Meta: model = Usuario; fields = ('id', 'username', 'email', 'password', 'rol', 'is_staff', 'is_active', 'sucursal')
+    class Meta: 
+        model = Usuario; fields = ('id', 'username', 'email', 'password', 'rol', 'is_staff', 'is_active', 'sucursal')
+        fields = ['id', 'username', 'email','password', 'rol', 'sucursal', 'limite_credito', 'dias_credito', 'is_active']
+        extra_kwargs = {'password': {'write_only': True, 'required': False}}
     def create(self, validated_data):
         password = validated_data.pop('password'); rol = validated_data.get('rol', 'CLIENTE')
         user = Usuario(**validated_data); user.set_password(password)
         if rol in ['ADMIN', 'VENDEDOR', 'GERENTE']: user.is_staff = True
         user.save(); return user
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
 
 class UserDetailSerializer(serializers.ModelSerializer):
     sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
@@ -80,7 +91,8 @@ class AdminPedidoSerializer(serializers.ModelSerializer):
     cliente_username = serializers.CharField(source='cliente.username', read_only=True)
     sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
     direccion_str = serializers.CharField(source='direccion_envio.__str__', read_only=True)
-    class Meta: model = Pedido; fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'estado', 'detalles', 'transaction_id', 'metodo_pago'); read_only_fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'detalles', 'transaction_id', 'metodo_pago')
+    total_con_mora = serializers.ReadOnlyField()
+    class Meta: model = Pedido; fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'estado', 'detalles', 'transaction_id', 'metodo_pago', 'fecha_vencimiento', 'tasa_mora', 'total_con_mora'); read_only_fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'detalles', 'transaction_id', 'metodo_pago', 'fecha_vencimiento', 'tasa_mora', 'total_con_mora')
 
 class HistoricalInventarioSerializer(serializers.ModelSerializer):
     # Campos calculados (Solo texto simple, nada de objetos pesados)

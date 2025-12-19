@@ -9,6 +9,7 @@ from datetime import datetime
 from decouple import config
 from decimal import Decimal
 from rest_framework.permissions import IsAdminUser
+from django.utils import timezone
 
 
 # --- PDF ---
@@ -548,13 +549,17 @@ class FacturaPDFView(APIView):
             return Response({'error': str(e)}, 404)
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([permissions.IsAdminUser])
 def reporte_ventas(request):
-    # Usamos aggregate para que la BD sume (Optimización)
+    hoy = timezone.now().date()
+    
     total = Pedido.objects.filter(estado='PAGADO').aggregate(Sum('total'))['total__sum'] or 0
     conteo = Pedido.objects.filter(estado='PAGADO').count()
     
+    vencidas = Pedido.objects.filter(estado='PENDIENTE', fecha_vencimiento__lt=hoy).count()
+    
     return Response({
         'total_ventas': total, 
-        'pedidos_procesados': conteo
+        'pedidos_procesados': conteo,
+        'facturas_vencidas': vencidas 
     })

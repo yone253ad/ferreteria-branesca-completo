@@ -1,10 +1,9 @@
-# Este código reemplaza todo en: api/models.py
-
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator, MinValueValidator
 from simple_history.models import HistoricalRecords
-from decimal import Decimal # <-- ¡IMPORTANTE! Para corregir el warning
+from decimal import Decimal 
+from datetime import timedelta, date
 
 # --- Validadores ---
 solo_letras = RegexValidator(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$', 'Solo se permiten letras y espacios.')
@@ -19,15 +18,18 @@ class Sucursal(models.Model):
 # 2. Usuario
 class Usuario(AbstractUser):
     class Rol(models.TextChoices):
-        ADMINISTRADOR = 'ADMIN', 'Administrador'
+        ADMIN = 'ADMIN', 'Administrador'
         CLIENTE = 'CLIENTE', 'Cliente'
         VENDEDOR = 'VENDEDOR', 'Vendedor'
         GERENTE = 'GERENTE', 'Gerente'
 
-    username = models.CharField(max_length=150, unique=True, validators=[RegexValidator(r'^[\w.@+-]+$', 'Nombre inválido.')], error_messages={'unique': "Ya existe."})
     rol = models.CharField(max_length=10, choices=Rol.choices, default=Rol.CLIENTE)
-    sucursal = models.ForeignKey(Sucursal, on_delete=models.SET_NULL, null=True, blank=True, related_name='empleados')
-    def __str__(self): return self.username
+    sucursal = models.ForeignKey('Sucursal', on_delete=models.SET_NULL, null=True, blank=True)
+    limite_credito = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    dias_credito = models.PositiveIntegerField(default=0, verbose_name="Días de Plazo")
+    
+    def __str__(self): 
+        return self.username
 
 # 3. Direccion
 class Direccion(models.Model):
@@ -89,6 +91,8 @@ class Pedido(models.Model):
     cliente = models.ForeignKey(Usuario, related_name='pedidos', on_delete=models.SET_NULL, null=True)
     direccion_envio = models.ForeignKey(Direccion, on_delete=models.PROTECT, null=True, blank=True)
     vendedor = models.ForeignKey(Usuario, related_name='ventas_realizadas', on_delete=models.SET_NULL, null=True, blank=True)
+    fecha_vencimiento = models.DateField(null=True, blank=True)
+    tasa_mora = models.DecimalField(max_digits=5, decimal_places=2, default=0.00, verbose_name="Tasa Mora %")
     
     # Campos financieros
     metodo_pago = models.CharField(max_length=50, default='PAYPAL') 
@@ -107,6 +111,21 @@ class Pedido(models.Model):
     
     def __str__(self):
         return f"Pedido {self.id} ({self.estado})"
+    
+    def save(self, *args, **kwargs):
+        # Al crear pedido (si no tiene ID), calculamos vencimiento automático
+        if not self.id and self.cliente and self.cliente.dias_credito > 0:
+            self.fecha_vencimiento = date.today() + timedelta(days=self.cliente.dias_credito)
+        super().save(*args, **kwargs)
+        
+    @property
+    def total_con_mora(self):
+        from datetime import date
+        # Si está vencido y pendiente, aplicamos la mora
+        if self.estado == 'PENDIENTE' and self.fecha_vencimiento and self.fecha_vencimiento < date.today():
+            multa = self.total * (self.tasa_mora / 100)
+            return self.total + multa
+        return self.total
 
 # 8. DetallePedido
 class DetallePedido(models.Model):
