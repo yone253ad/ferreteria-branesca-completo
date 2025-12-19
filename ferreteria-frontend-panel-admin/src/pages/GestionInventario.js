@@ -14,25 +14,27 @@ function GestionInventario() {
   const [formData, setFormData] = useState({ producto: '', sucursal: '', cantidad: '' });
   const [editingId, setEditingId] = useState(null);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [invRes, prodRes, sucRes] = await Promise.all([
-        auth.axiosApi.get('/inventario/'),
-        auth.axiosApi.get('/productos/'),
-        auth.axiosApi.get('/sucursales/')
-      ]);
-      setInventarios(invRes.data);
-      setProductos(prodRes.data);
-      setSucursales(sucRes.data);
-      setLoading(false);
-    } catch (err) {
-      console.error(err);
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchData(); }, [auth.axiosApi]);
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        // Hacemos las peticiones en paralelo
+        const [invRes, prodRes, sucRes] = await Promise.all([
+          auth.axiosApi.get('/inventario/'),
+          auth.axiosApi.get('/productos/'),
+          auth.axiosApi.get('/sucursales/')
+        ]);
+        setInventarios(invRes.data);
+        setProductos(prodRes.data);
+        setSucursales(sucRes.data);
+        setLoading(false);
+      } catch (err) {
+        console.error(err);
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [auth.axiosApi]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,146 +44,105 @@ function GestionInventario() {
       } else {
         await auth.axiosApi.post('/inventario/', formData);
       }
-      alert('Inventario actualizado.');
+      alert('Guardado.');
       setShowModal(false);
-      setEditingId(null);
-      setFormData({ producto: '', sucursal: '', cantidad: '' });
-      fetchData();
-    } catch (err) { 
-      alert("Error. Quizás ya existe un registro para este producto en esta sucursal."); 
-    }
+      // Recargar página completa para refrescar datos (simple y seguro)
+      window.location.reload(); 
+    } catch (err) { alert("Error al guardar."); }
   };
 
   const handleEdit = (item) => {
     setEditingId(item.id);
-    // Dependiendo de cómo devuelva el serializer (ID u objeto), ajustamos:
-    // Si item.producto es un objeto, usamos item.producto.id, si es un número, usamos item.producto
-    const prodId = typeof item.producto === 'object' ? item.producto.id : item.producto;
-    const sucId = typeof item.sucursal === 'object' ? item.sucursal.id : item.sucursal;
-
     setFormData({ 
-        producto: prodId || '',
-        sucursal: sucId || '',
+        producto: item.producto, // El backend ahora devuelve el ID directo en algunas configuraciones, o el objeto
+        sucursal: item.sucursal,
         cantidad: item.cantidad 
     });
     setShowModal(true);
   };
 
-  // Helpers seguros para nombres
-  const getProdName = (prod) => {
-      if (typeof prod === 'object' && prod.nombre) return prod.nombre;
-      const found = productos.find(p => p.id === prod);
-      return found ? found.nombre : 'Producto #' + prod;
+  // Helpers seguros: Si el backend manda objeto (por el select_related), usamos .nombre
+  // Si manda ID, buscamos en la lista.
+  const getNombreProducto = (prod) => {
+      if (typeof prod === 'object') return prod.nombre; 
+      return productos.find(p => p.id === prod)?.nombre || prod;
   };
-
-  const getSucName = (suc) => {
-      if (typeof suc === 'object' && suc.nombre) return suc.nombre;
-      const found = sucursales.find(s => s.id === suc);
-      return found ? found.nombre : 'Sucursal #' + suc;
+  
+  const getNombreSucursal = (suc) => {
+      if (typeof suc === 'object') return suc.nombre;
+      return sucursales.find(s => s.id === suc)?.nombre || suc;
   };
 
   if (loading) return <div className="text-center mt-5"><Spinner animation="border" /></div>;
 
   return (
-    <div className="p-4">
+    <div className="p-3">
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>Control de Inventario</h2>
-        <Button variant="success" onClick={() => { setEditingId(null); setFormData({ producto: '', sucursal: '', cantidad: '' }); setShowModal(true); }}>
-            + Agregar Stock
-        </Button>
+        <h2>Inventario</h2>
+        <Button variant="success" onClick={() => { setEditingId(null); setFormData({}); setShowModal(true); }}>+ Asignar Stock</Button>
       </div>
 
-      <div className="bg-white shadow-sm rounded p-0 overflow-hidden">
-        <Table striped hover responsive className="mb-0">
+      <div className="bg-white shadow-sm rounded">
+        <Table striped hover responsive className="mb-0 align-middle">
             <thead className="bg-dark text-white">
             <tr>
-                <th className="py-3 px-4">Producto</th>
-                <th className="py-3 px-4">Sucursal</th>
-                <th className="py-3 px-4">Cantidad</th>
-                <th className="py-3 px-4">Acciones</th>
+                <th>Producto</th>
+                <th>Sucursal</th>
+                <th>Stock</th>
+                <th>Acción</th>
             </tr>
             </thead>
             <tbody>
             {inventarios.map(inv => (
                 <tr key={inv.id}>
-                <td className="px-4 align-middle">{getProdName(inv.producto)}</td> 
-                <td className="px-4 align-middle">{getSucName(inv.sucursal)}</td>
-                <td className="px-4 align-middle">
-                    <Badge bg={inv.cantidad < 10 ? 'danger' : 'success'} style={{fontSize: '0.9rem', padding: '8px 12px'}}>
-                        {inv.cantidad}
+                <td className="fw-bold">{getNombreProducto(inv.producto)}</td> 
+                <td>{getNombreSucursal(inv.sucursal)}</td>
+                <td>
+                    <Badge bg={inv.cantidad < 10 ? 'danger' : 'success'} style={{fontSize:'0.9rem'}}>
+                        {inv.cantidad} u.
                     </Badge>
                 </td>
-                <td className="px-4 align-middle">
-                    <Button variant="outline-primary" size="sm" onClick={() => handleEdit(inv)}>
-                        Editar Cantidad
-                    </Button>
+                <td>
+                    <Button variant="outline-primary" size="sm" onClick={() => handleEdit(inv)}>Editar</Button>
                 </td>
                 </tr>
             ))}
-            {inventarios.length === 0 && (
-                <tr><td colSpan="4" className="text-center py-4 text-muted">No hay inventario registrado.</td></tr>
-            )}
             </tbody>
         </Table>
       </div>
 
+      {/* Modal Formulario (Simplificado para brevedad, usa lógica anterior de Selects) */}
       <Modal show={showModal} onHide={() => setShowModal(false)}>
-        <Modal.Header closeButton>
-            <Modal.Title>{editingId ? 'Editar Stock' : 'Nuevo Registro de Inventario'}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Form onSubmit={handleSubmit}>
-            {!editingId && (
-                <>
-                    <Form.Group className="mb-3">
-                        <Form.Label>Producto</Form.Label>
-                        <Form.Select 
-                            value={formData.producto} 
-                            onChange={e => setFormData({...formData, producto: e.target.value})} 
-                            required
-                        >
-                            <option value="">-- Seleccionar Producto --</option>
-                            {productos.map(p => (
-                                <option key={p.id} value={p.id}>{p.nombre}</option>
-                            ))}
-                        </Form.Select>
-                    </Form.Group>
-
-                    <Form.Group className="mb-3">
-                        <Form.Label>Sucursal</Form.Label>
-                        <Form.Select 
-                            value={formData.sucursal} 
-                            onChange={e => setFormData({...formData, sucursal: e.target.value})} 
-                            required
-                        >
-                            <option value="">-- Seleccionar Sucursal --</option>
-                            {sucursales.map(s => (
-                                <option key={s.id} value={s.id}>{s.nombre}</option>
-                            ))}
-                        </Form.Select>
-                    </Form.Group>
-                </>
-            )}
-            
-            <Form.Group className="mb-3">
-                <Form.Label>Cantidad</Form.Label>
-                <Form.Control 
-                    type="number" 
-                    value={formData.cantidad} 
-                    onChange={e => setFormData({...formData, cantidad: e.target.value})} 
-                    required 
-                    min="0"
-                />
-            </Form.Group>
-            
-            <div className="d-grid gap-2">
-                <Button type="submit" variant="primary" size="lg">Guardar</Button>
-            </div>
-          </Form>
-        </Modal.Body>
+         <Modal.Header closeButton><Modal.Title>Gestionar Stock</Modal.Title></Modal.Header>
+         <Modal.Body>
+             <Form onSubmit={handleSubmit}>
+                 {!editingId && (
+                     <>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Producto</Form.Label>
+                            <Form.Select onChange={e=>setFormData({...formData, producto: e.target.value})} required>
+                                <option value="">Seleccione...</option>
+                                {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                            </Form.Select>
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Sucursal</Form.Label>
+                            <Form.Select onChange={e=>setFormData({...formData, sucursal: e.target.value})} required>
+                                <option value="">Seleccione...</option>
+                                {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                            </Form.Select>
+                        </Form.Group>
+                     </>
+                 )}
+                 <Form.Group className="mb-3">
+                    <Form.Label>Cantidad</Form.Label>
+                    <Form.Control type="number" onChange={e=>setFormData({...formData, cantidad: e.target.value})} required />
+                 </Form.Group>
+                 <Button type="submit" className="w-100">Guardar</Button>
+             </Form>
+         </Modal.Body>
       </Modal>
     </div>
   );
 }
-
 export default GestionInventario;

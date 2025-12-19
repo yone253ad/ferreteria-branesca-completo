@@ -5,6 +5,8 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 from . import views
+from .views import HistorialInventarioView
+
 
 router = DefaultRouter()
 router.register(r'productos', views.ProductoViewSet)
@@ -44,4 +46,6 @@ urlpatterns = [
     path('factura/<int:pedido_id>/', views.FacturaPDFView.as_view(), name='factura-pdf'),
     path('monitor-pedidos/', views.MonitorPedidosView.as_view(), name='monitor-pedidos'),
     path('auditoria-inventario/', views.HistorialInventarioView.as_view(), name='auditoria-inventario'),
+    path('historial-inventario/', HistorialInventarioView.as_view(), name='historial-inventario'),
+    path('reporte-ventas/', views.reporte_ventas, name='reporte-ventas'),
 ]

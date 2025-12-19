@@ -1,13 +1,15 @@
 from rest_framework import viewsets, permissions, generics, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.decorators import action
+from rest_framework.decorators import action,api_view, permission_classes
 from django.db import transaction, IntegrityError
 from django.core.mail import send_mail
 from django.db.models import Sum, Count
 from datetime import datetime
 from decouple import config
 from decimal import Decimal
+from rest_framework.permissions import IsAdminUser
+
 
 # --- PDF ---
 from django.http import HttpResponse
@@ -113,11 +115,14 @@ class CategoriaViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
 
 class ProductoViewSet(viewsets.ModelViewSet):
-    queryset = Producto.objects.all().order_by('nombre')
+    # select_related('categoria') evita una consulta extra por cada producto
+    queryset = Producto.objects.select_related('categoria').all().order_by('nombre')
     serializer_class = ProductoSerializer
-    permission_classes = [IsAdminOrReadOnly]
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['categoria']
+    
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [permissions.AllowAny()]
+        return [permissions.IsAdminUser()]
 
 class RecomendacionesList(generics.ListAPIView):
     serializer_class = RecomendacionSerializer
@@ -220,15 +225,30 @@ class HistorialPedidosView(generics.ListAPIView):
 # 3. ADMINISTRACIÓN & POS
 # ==========================
 
+
 class InventarioViewSet(viewsets.ModelViewSet):
-    queryset = Inventario.objects.all(); serializer_class = InventarioSerializer; permission_classes = [permissions.IsAdminUser]
+    queryset = Inventario.objects.select_related('producto', 'sucursal').all().order_by('producto__nombre')
+    serializer_class = InventarioSerializer
+    permission_classes = [permissions.IsAdminUser]
 class AdminPedidoViewSet(viewsets.ModelViewSet):
-    queryset = Pedido.objects.all().order_by('-fecha_pedido'); serializer_class = AdminPedidoSerializer; permission_classes = [permissions.IsAdminUser]
+    # Trae cliente, vendedor, sucursal, dirección Y los detalles del producto de un solo golpe
+    queryset = Pedido.objects.select_related(
+        'cliente', 'vendedor', 'sucursal', 'direccion_envio'
+    ).prefetch_related(
+        'detalles__producto'
+    ).all().order_by('-fecha_pedido')
+    
+    serializer_class = AdminPedidoSerializer
+    permission_classes = [permissions.IsAdminUser]
 class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = Usuario.objects.all().order_by('-date_joined'); serializer_class = GestionUsuarioSerializer; permission_classes = [permissions.IsAdminUser]
 class HistorialInventarioView(generics.ListAPIView):
-    serializer_class = HistoricalInventarioSerializer; permission_classes = [permissions.IsAdminUser]
-    def get_queryset(self): return Inventario.history.all().order_by('-history_date')
+    serializer_class = HistoricalInventarioSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        # Traemos los últimos 100 movimientos ordenados por fecha
+        return Inventario.history.select_related('history_user', 'producto', 'sucursal').all().order_by('-history_date')[:100]
 class AlertasStockBajoView(generics.ListAPIView):
     serializer_class = InventarioSerializer; permission_classes = [permissions.IsAdminUser]
     def get_queryset(self): return Inventario.objects.filter(cantidad__lte=10).order_by('cantidad')
@@ -356,7 +376,6 @@ class FacturaPDFView(APIView):
             metodo = p.metodo_pago # EFECTIVO / TARJETA / PAYPAL
             ref = p.transaction_id if p.transaction_id else "N/A"
 
-            # HTML CON DISEÑO PROFESIONAL (AZUL)
             html = f"""
             <!DOCTYPE html>
             <html>
@@ -524,3 +543,15 @@ class FacturaPDFView(APIView):
 
         except Exception as e:
             return Response({'error': str(e)}, 404)
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def reporte_ventas(request):
+    # Usamos aggregate para que la BD sume (Optimización)
+    total = Pedido.objects.filter(estado='PAGADO').aggregate(Sum('total'))['total__sum'] or 0
+    conteo = Pedido.objects.filter(estado='PAGADO').count()
+    
+    return Response({
+        'total_ventas': total, 
+        'pedidos_procesados': conteo
+    })

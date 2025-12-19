@@ -45,7 +45,25 @@ function GestionProductos() {
     }
   };
 
-  useEffect(() => {
+useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [productosRes, categoriasRes] = await Promise.all([
+            auth.axiosApi.get('/productos/'),
+            auth.axiosApi.get('/categorias/')
+        ]);
+
+        setProductos(productosRes.data);
+        setCategorias(categoriasRes.data);
+      } catch (err) {
+        console.error("Error cargando datos:", err);
+        setError("Error de conexión al cargar productos.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchData();
   }, [auth.axiosApi]);
 

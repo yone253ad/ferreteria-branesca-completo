@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from .models import Inventario
 
 from .models import (
     Usuario, Producto, Categoria, Sucursal, 
@@ -82,10 +83,14 @@ class AdminPedidoSerializer(serializers.ModelSerializer):
     class Meta: model = Pedido; fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'estado', 'detalles', 'transaction_id', 'metodo_pago'); read_only_fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'detalles', 'transaction_id', 'metodo_pago')
 
 class HistoricalInventarioSerializer(serializers.ModelSerializer):
-    history_user_str = serializers.CharField(source='history_user.username', read_only=True, default='Sistema')
-    producto_str = serializers.CharField(source='producto.nombre', read_only=True)
-    sucursal_str = serializers.CharField(source='sucursal.nombre', read_only=True)
-    class Meta: model = Inventario.history.model; fields = ('history_id', 'history_date', 'history_type', 'history_user_str', 'producto_str', 'sucursal_str', 'cantidad')
+    # Campos calculados para que el frontend reciba TEXTO y no NUMEROS
+    producto_nombre = serializers.ReadOnlyField(source='instance.producto.nombre', default='-')
+    sucursal_nombre = serializers.ReadOnlyField(source='instance.sucursal.nombre', default='-')
+    history_user_username = serializers.ReadOnlyField(source='history_user.username', default='Sistema')
+
+    class Meta:
+        model = Inventario.history.model
+        fields = '__all__'
 
 class CarritoItemSerializer(serializers.ModelSerializer):
     producto_detalle = ProductoSerializer(source='producto', read_only=True)
