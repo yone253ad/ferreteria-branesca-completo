@@ -11,11 +11,11 @@ function GestionUsuarios() {
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
+  // LIMPIEZA: Ya no necesitamos campos de crédito aquí
   const [formData, setFormData] = useState({
     username: '', email: '', password: '', rol: 'VENDEDOR', sucursal: ''
   });
 
-  // --- MOVIDO DENTRO DE USEEFFECT (Para eliminar advertencia) ---
   useEffect(() => {
     const fetchData = async () => {
         try {
@@ -35,9 +35,7 @@ function GestionUsuarios() {
       };
     fetchData();
   }, [auth.axiosApi]);
-  // ------------------------------------------------------------
 
-  // Función auxiliar para recargar datos después de crear/borrar
   const reloadData = async () => {
       try {
         const usersRes = await auth.axiosApi.get('/gestion-usuarios/');
@@ -54,7 +52,7 @@ function GestionUsuarios() {
       setShowModal(false);
       setFormData({ username: '', email: '', password: '', rol: 'VENDEDOR', sucursal: '' });
       reloadData();
-    } catch (err) { alert("Error al crear usuario."); }
+    } catch (err) { alert("Error al crear usuario. Verifica que no exista el nombre."); }
   };
 
   const handleDelete = async (id) => {
@@ -87,8 +85,11 @@ function GestionUsuarios() {
   return (
     <div>
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2>Gestión de Usuarios</h2>
-        <Button variant="success" onClick={() => setShowModal(true)}>+ Nuevo Usuario</Button>
+        <div>
+            <h2>Gestión de Personal</h2>
+            <p className="text-muted mb-0">Administración de Vendedores y Gerentes</p>
+        </div>
+        <Button variant="success" onClick={() => setShowModal(true)}>+ Nuevo Empleado</Button>
       </div>
 
       <Table striped bordered hover responsive className="bg-white shadow-sm">
@@ -120,7 +121,10 @@ function GestionUsuarios() {
                 <div className="col-md-6">
                     <Form.Group className="mb-3"><Form.Label>Rol</Form.Label>
                       <Form.Select value={formData.rol} onChange={e => setFormData({...formData, rol: e.target.value})}>
-                        <option value="VENDEDOR">Vendedor</option><option value="GERENTE">Gerente</option><option value="ADMIN">Administrador</option><option value="CLIENTE">Cliente</option>
+                        <option value="VENDEDOR">Vendedor</option>
+                        <option value="GERENTE">Gerente</option>
+                        <option value="ADMIN">Administrador</option>
+                        {/* Se eliminó CLIENTE de aquí */}
                       </Form.Select>
                     </Form.Group>
                 </div>
@@ -134,27 +138,6 @@ function GestionUsuarios() {
                 </div>
             </div>
             <div className="d-grid mt-3"><Button type="submit" variant="primary">Guardar</Button></div>
-            <div className="d-flex gap-3">
-              <Form.Group className="mb-3 flex-grow-1">
-                  <Form.Label>Límite Crédito (C$)</Form.Label>
-                  <Form.Control 
-                      type="number" 
-                      value={formData.limite_credito || 0} 
-                      onChange={e => setFormData({...formData, limite_credito: e.target.value})} 
-                  />
-              </Form.Group>
-
-              <Form.Group className="mb-3 flex-grow-1">
-                  <Form.Label>Plazo (Días)</Form.Label>
-                  <Form.Control 
-                      type="number" 
-                      placeholder="Ej: 15, 30"
-                      value={formData.dias_credito || 0} 
-                      onChange={e => setFormData({...formData, dias_credito: e.target.value})} 
-                  />
-                  <Form.Text className="text-muted">Días para pagar tras compra.</Form.Text>
-              </Form.Group>
-          </div>
           </Form>
         </Modal.Body>
       </Modal>

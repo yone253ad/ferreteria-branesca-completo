@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-// Importaciones limpias
 import { 
   Row, Col, Card, Form, Table, Button, Alert, Offcanvas, Navbar, Container, Modal, InputGroup 
 } from 'react-bootstrap';
-import { Plus, Minus, Trash2, Printer, ShoppingCart, CreditCard, Banknote } from 'lucide-react';
+import { Plus, Minus, Trash2, Printer, ShoppingCart, CreditCard, Banknote, User, CheckCircle, AlertTriangle } from 'lucide-react';
 
 function Facturacion() {
   const auth = useAuth();
   
   // Datos
   const [productos, setProductos] = useState([]); 
+  const [clientes, setClientes] = useState([]); // Nuevo estado para clientes
+  const [clienteSeleccionado, setClienteSeleccionado] = useState(null); 
+
   const [carrito, setCarrito] = useState([]); 
   const [searchTerm, setSearchTerm] = useState('');
   const [sucursalId, setSucursalId] = useState(null);
@@ -36,9 +38,15 @@ function Facturacion() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const resProd = await auth.axiosApi.get('/productos/');
+        const [resProd, resSuc, resCli] = await Promise.all([
+             auth.axiosApi.get('/productos/'),
+             auth.axiosApi.get('/sucursales/'),
+             auth.axiosApi.get('/clientes/') // Cargar clientes
+        ]);
+        
         setProductos(resProd.data);
-        const resSuc = await auth.axiosApi.get('/sucursales/');
+        setClientes(resCli.data);
+
         if (resSuc.data.length > 0) {
              setSucursalId(resSuc.data[0].id);
         }
@@ -50,7 +58,44 @@ function Facturacion() {
     loadData();
   }, [auth.axiosApi]);
 
-  // Cálculo de Cambio en Tiempo Real
+  // Manejo de Cambio de Cliente
+  const handleClienteChange = (id) => {
+    if(!id) { setClienteSeleccionado(null); return; }
+    const cliente = clientes.find(c => c.id === parseInt(id));
+    setClienteSeleccionado(cliente);
+  };
+
+  // Renderizado de Info Crédito
+  const renderInfoCredito = () => {
+    if (!clienteSeleccionado) return <div className="text-muted small mt-2">Cliente General (Mostrador)</div>;
+
+    const limite = parseFloat(clienteSeleccionado.limite_credito);
+    const deuda = parseFloat(clienteSeleccionado.deuda_actual || 0);
+    const disponible = limite - deuda;
+    const tieneCredito = limite > 0;
+
+    if (!tieneCredito) return <Badge bg="secondary" className="mt-2 w-100">Contado (Sin Crédito)</Badge>;
+
+    const color = disponible > 0 ? 'success' : 'danger';
+    const Icono = disponible > 0 ? CheckCircle : AlertTriangle;
+
+    return (
+        <Card className={`mt-2 border-${color} bg-light`}>
+            <Card.Body className="p-2">
+                <div className={`text-${color} fw-bold d-flex align-items-center justify-content-center mb-1 small`}>
+                    <Icono size={16} className="me-1"/> {disponible > 0 ? "Crédito OK" : "Límite Excedido"}
+                </div>
+                <Row className="text-center g-1 small" style={{fontSize: '0.75rem'}}>
+                    <Col xs={4}><div>Límite</div><strong>{limite.toFixed(0)}</strong></Col>
+                    <Col xs={4}><div>Deuda</div><strong className="text-danger">{deuda.toFixed(0)}</strong></Col>
+                    <Col xs={4}><div>Disp.</div><strong className={`text-${color}`}>{disponible.toFixed(0)}</strong></Col>
+                </Row>
+            </Card.Body>
+        </Card>
+    );
+  };
+
+  // Cálculo de Cambio
   useEffect(() => {
     if (metodoPago === 'EFECTIVO' && montoRecibido) {
         const recibido = parseFloat(montoRecibido);
@@ -67,9 +112,18 @@ function Facturacion() {
   // --- Lógica del Carrito ---
 
   const agregarProducto = (producto) => {
+    if(producto.stock_disponible !== undefined && producto.stock_disponible <= 0) {
+        alert("¡Sin stock disponible!");
+        return;
+    }
+
     setCarrito(prev => {
       const existe = prev.find(item => item.id === producto.id);
       if (existe) {
+        if(producto.stock_disponible !== undefined && existe.cantidad >= producto.stock_disponible) {
+            alert("No hay más stock");
+            return prev;
+        }
         return prev.map(item => item.id === producto.id ? { ...item, cantidad: item.cantidad + 1 } : item);
       }
       return [...prev, { ...producto, cantidad: 1 }];
@@ -89,16 +143,24 @@ function Facturacion() {
     setCarrito(prev => prev.filter(item => item.id !== id));
   };
 
-  // Paso 1: Abrir Modal
   const iniciarCobro = () => {
       if (carrito.length === 0) return;
       if (!sucursalId) { setErrorMsg("Error: Sin sucursal."); return; }
+      
+      // Validación de Crédito
+      if(clienteSeleccionado && parseFloat(clienteSeleccionado.limite_credito) > 0) {
+          const disponible = parseFloat(clienteSeleccionado.limite_credito) - parseFloat(clienteSeleccionado.deuda_actual);
+          if(total > disponible) {
+              if(!window.confirm("⚠️ ALERTA DE CRÉDITO:\nEl cliente excede su límite disponible.\n\n¿Desea continuar de todas formas?")) return;
+          }
+      }
+
       setMontoRecibido(''); // Resetear
       setMetodoPago('EFECTIVO');
       setShowPaymentModal(true);
   };
 
-  // Paso 2: Confirmar Venta
+  // Confirmar Venta
   const procesarVenta = async () => {
     if (metodoPago === 'EFECTIVO' && (parseFloat(montoRecibido) < total || !montoRecibido)) {
         alert("Monto insuficiente."); return;
@@ -109,7 +171,7 @@ function Facturacion() {
     try {
       const payload = {
         sucursal_id: sucursalId,
-        nombre_cliente: "Cliente Mostrador",
+        cliente_id: clienteSeleccionado ? clienteSeleccionado.id : null, // Ahora enviamos ID
         items: carrito.map(item => ({ id: item.id, cantidad: item.cantidad })),
         metodo_pago: metodoPago,
         monto_recibido: metodoPago === 'EFECTIVO' ? parseFloat(montoRecibido) : total
@@ -120,7 +182,7 @@ function Facturacion() {
       const nuevoPedidoId = res.data.pedido_id;
       setLastPedidoId(nuevoPedidoId);
       setSuccessMsg(`¡Venta #${nuevoPedidoId} registrada con éxito!`);
-      setCarrito([]); setSearchTerm(''); 
+      setCarrito([]); setSearchTerm(''); setClienteSeleccionado(null);
 
     } catch (err) {
       setErrorMsg("Error: " + (err.response?.data?.error || "Desconocido"));
@@ -132,12 +194,7 @@ function Facturacion() {
       try {
           const response = await auth.axiosApi.get(`/factura/${lastPedidoId}/`, { responseType: 'blob' });
           const url = window.URL.createObjectURL(new Blob([response.data]));
-          const link = document.createElement('a');
-          link.href = url;
-          link.setAttribute('download', `Factura_${lastPedidoId}.pdf`);
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
+          window.open(url, '_blank');
       } catch (e) {
           alert("Error al generar PDF.");
       }
@@ -150,6 +207,20 @@ function Facturacion() {
 
   const renderTicketContent = () => (
     <div className="d-flex flex-column h-100">
+      {/* SECCIÓN CLIENTE EN TICKET */}
+      <div className="px-3 py-2 bg-light border-bottom">
+          <div className="d-flex align-items-center mb-1">
+              <User size={16} className="me-2 text-muted"/> 
+              <Form.Select size="sm" className="border-0 bg-white shadow-sm" value={clienteSeleccionado?.id || ''} onChange={(e) => handleClienteChange(e.target.value)}>
+                  <option value="">-- Cliente Mostrador --</option>
+                  {clientes.map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                  ))}
+              </Form.Select>
+          </div>
+          {renderInfoCredito()}
+      </div>
+
       <div className="flex-grow-1" style={{ overflowY: 'auto', minHeight: '200px' }}>
         <Table striped borderless size="sm" className="align-middle">
           <thead className="text-muted small"><tr><th>Prod</th><th className="text-center">Cant</th><th className="text-end">Sub</th><th></th></tr></thead>
@@ -177,7 +248,7 @@ function Facturacion() {
             ))}
           </tbody>
         </Table>
-        {carrito.length === 0 && <div className="text-center text-muted mt-5"><ShoppingCart size={48} className="mb-2 opacity-25"/><p>Vacío</p></div>}
+        {carrito.length === 0 && <div className="text-center text-muted mt-4"><ShoppingCart size={48} className="mb-2 opacity-25"/><p>Carrito Vacío</p></div>}
       </div>
 
       <div className="mt-auto border-top pt-3 bg-light p-3 rounded-top">
@@ -226,7 +297,10 @@ function Facturacion() {
                     {productosFiltrados.map(prod => (
                       <tr key={prod.id} style={{cursor:'pointer'}} onClick={() => agregarProducto(prod)}>
                         <td style={{width: '60px'}}>{prod.imagen ? <img src={prod.imagen} alt="" style={{width:'45px', height:'45px', objectFit:'cover', borderRadius:'6px'}}/> : <div style={{width:'45px', height:'45px', background:'#eee', borderRadius:'6px'}}></div>}</td>
-                        <td><div className="fw-bold text-dark">{prod.nombre}</div><small className="text-muted">{prod.sku}</small></td>
+                        <td>
+                            <div className="fw-bold text-dark">{prod.nombre}</div>
+                            <small className="text-muted">{prod.sku} {prod.stock_disponible !== undefined && `| Stock: ${prod.stock_disponible}`}</small>
+                        </td>
                         <td className="text-end"><div className="text-success fw-bold fs-5">${prod.precio}</div></td>
                         <td className="text-end"><Button variant="primary" size="sm" className="rounded-circle p-2"><Plus size={18}/></Button></td>
                       </tr>

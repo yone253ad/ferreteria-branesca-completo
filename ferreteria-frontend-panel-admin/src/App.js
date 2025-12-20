@@ -1,5 +1,3 @@
-// Este código reemplaza todo en: src/App.js
-
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
@@ -14,10 +12,8 @@ import Facturacion from './pages/Facturacion';
 import GestionUsuarios from './pages/GestionUsuarios';
 import AuditoriaPage from './pages/AuditoriaPage';
 import CorteCaja from './pages/CorteCaja';
-import GestionInventario from './pages/GestionInventario'; // <-- Importar
-
-// ... dentro de <Routes> ...
-<Route path="inventario" element={<RequireRole allowedRoles={['ADMIN', 'GERENTE']}><GestionInventario /></RequireRole>} />
+import GestionInventario from './pages/GestionInventario';
+import ClientesPage from './pages/ClientesPage'; 
 
 function ProtectedRoute({ children }) {
   const auth = useAuth();
@@ -29,12 +25,7 @@ function RequireRole({ children, allowedRoles }) {
   const auth = useAuth();
   const userRol = auth.authUser?.rol;
   
-  // DEBUG: Ver qué rol está detectando
-  console.log("RequireRole chequeando:", userRol);
-
-  // Admin siempre pasa. Si no es admin, revisamos la lista.
   if (userRol !== 'ADMIN' && !allowedRoles.includes(userRol)) {
-    // Si no tiene permiso, lo mandamos al POS (zona segura para empleados)
     return <Navigate to="/facturacion" replace />;
   }
   return children;
@@ -43,7 +34,7 @@ function RequireRole({ children, allowedRoles }) {
 function App() {
   const auth = useAuth();
   
-  // Redirección inicial inteligente
+  // Redirección 
   const getHomeRoute = () => {
       if (auth.authUser?.rol === 'ADMIN' || auth.authUser?.rol === 'GERENTE') {
           return <DashboardPage />;
@@ -60,14 +51,17 @@ function App() {
         {/* Ruta raíz inteligente */}
         <Route index element={getHomeRoute()} /> 
         
-        {/* Rutas con Permisos Específicos */}
-        <Route path="pedidos" element={<RequireRole allowedRoles={['GERENTE']}><GestionPedidos /></RequireRole>} />
-        <Route path="productos" element={<RequireRole allowedRoles={[]}><GestionProductos /></RequireRole>} /> {/* Solo Admin */}
+        {/* --- RUTAS DE ADMINISTRACIÓN --- */}
         <Route path="usuarios" element={<RequireRole allowedRoles={[]}><GestionUsuarios /></RequireRole>} />   {/* Solo Admin */}
-        <Route path="auditoria" element={<RequireRole allowedRoles={['GERENTE']}><AuditoriaPage /></RequireRole>} />
+        <Route path="productos" element={<RequireRole allowedRoles={[]}><GestionProductos /></RequireRole>} /> {/* Solo Admin */}
         <Route path="inventario" element={<RequireRole allowedRoles={['ADMIN', 'GERENTE']}><GestionInventario /></RequireRole>} />
+        <Route path="auditoria" element={<RequireRole allowedRoles={['GERENTE']}><AuditoriaPage /></RequireRole>} />
         
-        {/* Rutas Públicas para Empleados */}
+        {/* --- 2. RUTA NUEVA DE CLIENTES --- */}
+        <Route path="clientes" element={<RequireRole allowedRoles={['GERENTE', 'VENDEDOR']}><ClientesPage /></RequireRole>} />
+        
+        {/* --- RUTAS OPERATIVAS --- */}
+        <Route path="pedidos" element={<RequireRole allowedRoles={['GERENTE', 'VENDEDOR']}><GestionPedidos /></RequireRole>} />
         <Route path="facturacion" element={<Facturacion />} />
         <Route path="corte-caja" element={<CorteCaja />} />
 

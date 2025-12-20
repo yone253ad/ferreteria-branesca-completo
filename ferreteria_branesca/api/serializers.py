@@ -1,68 +1,91 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import Inventario
-
 from .models import (
     Usuario, Producto, Categoria, Sucursal, 
-    Inventario, Pedido, DetallePedido, Direccion, CarritoItem, Recomendacion
+    Inventario, Pedido, DetallePedido, Direccion, 
+    CarritoItem, Recomendacion, Cliente
 )
 
+# --- 1. CONFIGURACIÓN ---
 class SucursalSerializer(serializers.ModelSerializer):
     class Meta: model = Sucursal; fields = '__all__'
 
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta: model = Categoria; fields = '__all__'
 
+class DireccionSerializer(serializers.ModelSerializer):
+    class Meta: model = Direccion; fields = '__all__'
+
+# --- 2. PRODUCTOS E INVENTARIO ---
 class ProductoSerializer(serializers.ModelSerializer):
     stock_disponible = serializers.SerializerMethodField()
-    class Meta: model = Producto; fields = ('id', 'sku', 'nombre', 'descripcion', 'precio', 'categoria', 'imagen', 'stock_disponible')
+    categoria_nombre = serializers.ReadOnlyField(source='categoria.nombre')
+
+    class Meta: 
+        model = Producto
+        fields = ('id', 'sku', 'nombre', 'descripcion', 'precio', 'categoria', 'categoria_nombre', 'imagen', 'stock_disponible')
+    
     def get_stock_disponible(self, obj):
+        # Intenta obtener el stock de la sucursal del usuario o una por defecto
         request = self.context.get('request')
-        sucursal_id = request.query_params.get('sucursal') if request else None
-        if not sucursal_id and request and request.user.is_authenticated and hasattr(request.user, 'sucursal') and request.user.sucursal:
-            sucursal_id = request.user.sucursal.id
-        target = sucursal_id if sucursal_id else 14 # Default a ID 14
-        try: return obj.inventarios.get(sucursal_id=target).cantidad
+        try:
+            if request and hasattr(request.user, 'sucursal') and request.user.sucursal:
+                return obj.inventarios.get(sucursal=request.user.sucursal).cantidad
+            return obj.inventarios.first().cantidad # Fallback
         except: return 0
 
 class InventarioSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
+    sucursal_nombre = serializers.ReadOnlyField(source='sucursal.nombre')
     class Meta: model = Inventario; fields = '__all__'
 
-class DireccionSerializer(serializers.ModelSerializer):
-    class Meta: model = Direccion; fields = '__all__'; read_only_fields = ('usuario',)
+class HistoricalInventarioSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.ReadOnlyField(source='instance.producto.nombre', default='-')
+    sucursal_nombre = serializers.ReadOnlyField(source='instance.sucursal.nombre', default='-')
+    usuario = serializers.ReadOnlyField(source='history_user.username', default='Sistema')
+    fecha = serializers.DateTimeField(source='history_date', format="%d/%m/%Y %H:%M")
+    class Meta:
+        model = Inventario.history.model
+        fields = ['history_id', 'fecha', 'usuario', 'history_type', 'producto_nombre', 'sucursal_nombre', 'cantidad']
+
+# --- 3. CLIENTES (NUEVO) ---
+class ClienteSerializer(serializers.ModelSerializer):
+    deuda_actual = serializers.ReadOnlyField() # Campo calculado en el modelo
+    class Meta:
+        model = Cliente
+        fields = '__all__'
+
+# --- 4. USUARIOS (SISTEMA) ---
+class GestionUsuarioSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False)
+    
+    class Meta: 
+        model = Usuario
+        fields = ['id', 'username', 'email', 'password', 'rol', 'sucursal', 'is_active', 'is_staff']
+    
     def create(self, validated_data):
-        validated_data['usuario'] = self.context['request'].user
-        return super().create(validated_data)
+        password = validated_data.pop('password', None)
+        instance = self.Meta.model(**validated_data)
+        if password: instance.set_password(password)
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items(): setattr(instance, attr, value)
+        if password: instance.set_password(password)
+        instance.save()
+        return instance
 
 class RegistroUsuarioSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
-    password2 = serializers.CharField(write_only=True, required=True)
-    class Meta: model = Usuario; fields = ('username', 'email', 'password', 'password2', 'is_staff', 'rol'); read_only_fields = ('is_staff', 'rol')
-    def validate(self, attrs):
-        if attrs['password'] != attrs['password2']: raise serializers.ValidationError({"password": "No coinciden."})
-        return attrs
-    def create(self, validated_data): return Usuario.objects.create_user(username=validated_data['username'], email=validated_data['email'], password=validated_data['password'])
-
-class GestionUsuarioSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})
     class Meta: 
-        model = Usuario; fields = ('id', 'username', 'email', 'password', 'rol', 'is_staff', 'is_active', 'sucursal')
-        fields = ['id', 'username', 'email','password', 'rol', 'sucursal', 'limite_credito', 'dias_credito', 'is_active']
-        extra_kwargs = {'password': {'write_only': True, 'required': False}}
+        model = Usuario
+        fields = ('username', 'email', 'password')
+    
     def create(self, validated_data):
-        password = validated_data.pop('password'); rol = validated_data.get('rol', 'CLIENTE')
-        user = Usuario(**validated_data); user.set_password(password)
-        if rol in ['ADMIN', 'VENDEDOR', 'GERENTE']: user.is_staff = True
-        user.save(); return user
-    def update(self, instance, validated_data):
-        password = validated_data.pop('password', None)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        if password:
-            instance.set_password(password)
-        instance.save()
-        return instance
+        return Usuario.objects.create_user(**validated_data)
 
 class UserDetailSerializer(serializers.ModelSerializer):
     sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
@@ -71,41 +94,33 @@ class UserDetailSerializer(serializers.ModelSerializer):
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True, validators=[validate_password])
-    def validate_old_password(self, value):
-        if not self.context['request'].user.check_password(value): raise serializers.ValidationError("Clave incorrecta.")
-        return value
 
+# --- 5. PEDIDOS Y VENTAS ---
 class DetallePedidoSerializer(serializers.ModelSerializer):
-    producto = ProductoSerializer(read_only=True) 
-    class Meta: model = DetallePedido; fields = ('producto', 'cantidad', 'precio_unitario')
+    producto_nombre = serializers.ReadOnlyField(source='producto.nombre')
+    class Meta: model = DetallePedido; fields = ['id', 'producto', 'producto_nombre', 'cantidad', 'precio_unitario']
+
+class AdminPedidoSerializer(serializers.ModelSerializer):
+    # Lectura: Objeto completo del cliente
+    cliente_info = ClienteSerializer(source='cliente', read_only=True)
+    # Escritura: Solo el ID del cliente
+    cliente = serializers.PrimaryKeyRelatedField(queryset=Cliente.objects.all(), write_only=True, required=False, allow_null=True)
+    
+    vendedor_nombre = serializers.ReadOnlyField(source='vendedor.username')
+    sucursal_nombre = serializers.ReadOnlyField(source='sucursal.nombre')
+    detalles = DetallePedidoSerializer(many=True, read_only=True)
+    total_con_mora = serializers.ReadOnlyField() # Importante para ver la mora
+
+    class Meta: 
+        model = Pedido
+        fields = '__all__'
 
 class PedidoSerializer(serializers.ModelSerializer):
     detalles = DetallePedidoSerializer(many=True, read_only=True)
-    cliente_username = serializers.CharField(source='cliente.username', read_only=True)
-    sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
-    direccion_str = serializers.CharField(source='direccion_envio.__str__', read_only=True)
-    class Meta: model = Pedido; fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'estado', 'detalles', 'transaction_id', 'metodo_pago')
+    cliente_nombre = serializers.ReadOnlyField(source='cliente.nombre')
+    class Meta: model = Pedido; fields = '__all__'
 
-class AdminPedidoSerializer(serializers.ModelSerializer):
-    detalles = DetallePedidoSerializer(many=True, read_only=True)
-    cliente_username = serializers.CharField(source='cliente.username', read_only=True)
-    sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
-    direccion_str = serializers.CharField(source='direccion_envio.__str__', read_only=True)
-    total_con_mora = serializers.ReadOnlyField()
-    class Meta: model = Pedido; fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'estado', 'detalles', 'transaction_id', 'metodo_pago', 'fecha_vencimiento', 'tasa_mora', 'total_con_mora'); read_only_fields = ('id', 'cliente_username', 'sucursal_nombre', 'direccion_str', 'fecha_pedido', 'total', 'detalles', 'transaction_id', 'metodo_pago', 'fecha_vencimiento', 'tasa_mora', 'total_con_mora')
-
-class HistoricalInventarioSerializer(serializers.ModelSerializer):
-    # Campos calculados (Solo texto simple, nada de objetos pesados)
-    producto_nombre = serializers.ReadOnlyField(source='instance.producto.nombre', default='-')
-    sucursal_nombre = serializers.ReadOnlyField(source='instance.sucursal.nombre', default='-')
-    usuario = serializers.ReadOnlyField(source='history_user.username', default='Sistema')
-    fecha = serializers.DateTimeField(source='history_date', format="%d/%m/%Y %H:%M") # Formateamos la fecha aquí directo
-
-    class Meta:
-        model = Inventario.history.model
-        # Solo enviamos lo estrictamente necesario
-        fields = ['history_id', 'fecha', 'usuario', 'history_type', 'producto_nombre', 'sucursal_nombre', 'cantidad']
-
+# --- 6. EXTRAS (CARRITO Y RECOMENDACIONES) ---
 class CarritoItemSerializer(serializers.ModelSerializer):
     producto_detalle = ProductoSerializer(source='producto', read_only=True)
     producto_id = serializers.PrimaryKeyRelatedField(queryset=Producto.objects.all(), source='producto', write_only=True)
@@ -115,7 +130,7 @@ class RecomendacionSerializer(serializers.ModelSerializer):
     producto = ProductoSerializer(source='producto_recomendado', read_only=True)
     class Meta: model = Recomendacion; fields = ('producto', 'score')
 
-# --- ¡ESTE ES CRÍTICO PARA EL LOGIN! ---
+# --- 7. TOKEN JWT ---
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
