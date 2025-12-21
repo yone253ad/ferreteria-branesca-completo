@@ -1,5 +1,3 @@
-# Este código reemplaza todo en: ferreteria_branesca/settings.py
-
 from pathlib import Path
 from decouple import config
 import os

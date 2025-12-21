@@ -34,7 +34,7 @@ function RequireRole({ children, allowedRoles }) {
 function App() {
   const auth = useAuth();
   
-  // Redirección 
+  // Redirección Inteligente
   const getHomeRoute = () => {
       if (auth.authUser?.rol === 'ADMIN' || auth.authUser?.rol === 'GERENTE') {
           return <DashboardPage />;

@@ -9,9 +9,12 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.mail import send_mail
 
-# PDF
+# --- PDF (REPORTLAB) ---
 from django.http import HttpResponse
-from xhtml2pdf import pisa
+import io
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
 
 # Auth & Google
 from django.contrib.auth.tokens import default_token_generator
@@ -50,7 +53,6 @@ class GoogleLoginView(APIView):
         try:
             id_info = id_token.verify_oauth2_token(token, google_requests.Request())
             email = id_info['email']
-            # Creamos usuario si no existe (Rol Cliente por defecto, pero usuario de sistema)
             user, created = Usuario.objects.get_or_create(username=email, defaults={
                 'email': email, 'first_name': id_info.get('given_name',''), 
                 'rol': 'VENDEDOR', 'is_active': True 
@@ -125,9 +127,6 @@ class DireccionViewSet(viewsets.ModelViewSet):
     serializer_class = DireccionSerializer
     permission_classes = [permissions.IsAuthenticated]
     def get_queryset(self): 
-        # Aquí hay un cambio: Las direcciones ahora son de Clientes, no de Usuarios.
-        # Si quieres direcciones personales de empleados, ajusta el modelo.
-        # Por ahora devolvemos todas para admin.
         return Direccion.objects.all()
 
 # ==========================
@@ -140,7 +139,6 @@ class AdminPedidoViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAdminUser]
     
     def perform_update(self, serializer):
-        # Lógica para recalcular totales si editan detalles se hace en el frontend y se envía aquí
         serializer.save()
 
 class VentaMostradorView(APIView):
@@ -151,7 +149,15 @@ class VentaMostradorView(APIView):
             if not sucursal: return Response({'error': 'Sin sucursal asignada'}, 400)
 
             metodo = request.data.get('metodo_pago', 'EFECTIVO')
-            recibido = request.data.get('monto_recibido', 0)
+            
+            # --- CORRECCIÓN CRÍTICA DE CRÉDITO ---
+            # Si es crédito, el monto recibido DEBE ser 0 para que se genere deuda.
+            if metodo == 'CREDITO':
+                recibido = 0
+            else:
+                # Si es efectivo o tarjeta, asumimos pago completo o lo que mande el frontend
+                recibido = request.data.get('monto_recibido', 0)
+
             cliente_id = request.data.get('cliente_id')
             
             # Buscar Cliente Real o Usar Genérico
@@ -180,7 +186,14 @@ class VentaMostradorView(APIView):
                 
                 total = subtotal * Decimal('1.15') # IVA 15%
                 DetallePedido.objects.bulk_create(detalles)
-                pedido.total = total; pedido.save()
+                pedido.total = total
+                
+                # REGLA DE NEGOCIO:
+                # Si es CREDITO, el estado nace como PENDIENTE para que cuente como deuda.
+                if metodo == 'CREDITO':
+                    pedido.estado = 'PENDIENTE'
+                
+                pedido.save()
                 
                 return Response({'pedido_id': pedido.id}, 201)
         except Exception as e: return Response({'error': str(e)}, 400)
@@ -188,9 +201,6 @@ class VentaMostradorView(APIView):
 class CheckoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request):
-        # Checkout online (Carrito) - Asumiendo que el usuario logueado es el cliente
-        # IMPORTANTE: Si separaste usuarios de clientes, el usuario online debe tener un Cliente asociado
-        # O simplificamos asumiendo que el pedido web es 'Pendiente' para revisar.
         return Response({"message": "Funcionalidad Web en mantenimiento por reestructuración"}, 200)
 
 # ==========================
@@ -254,56 +264,112 @@ class HistorialInventarioView(generics.ListAPIView):
 # ==========================
 
 class FacturaPDFView(APIView):
+    """
+    Genera un PDF usando ReportLab
+    """
     permission_classes = [permissions.IsAuthenticated]
+
     def get(self, request, pedido_id):
         try:
-            p = Pedido.objects.get(id=pedido_id)
-            detalles = DetallePedido.objects.filter(pedido=p)
+            pedido = Pedido.objects.get(pk=pedido_id)
+            detalles = DetallePedido.objects.filter(pedido=pedido)
+        except Pedido.DoesNotExist:
+            return HttpResponse("Pedido no encontrado", status=404)
+
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+
+        # Encabezado
+        p.setFont("Helvetica-Bold", 18)
+        p.drawString(1 * inch, height - 1 * inch, "FERRETERÍA EL SHADAY")
+        
+        p.setFont("Helvetica", 10)
+        p.drawString(1 * inch, height - 1.25 * inch, f"Sucursal: {pedido.sucursal.nombre}")
+        p.drawString(1 * inch, height - 1.4 * inch, f"Dirección: {pedido.sucursal.direccion}")
+        p.drawString(1 * inch, height - 1.55 * inch, "RUC: J031000000000")
+
+        # Datos Factura
+        p.setFont("Helvetica-Bold", 12)
+        p.drawRightString(7.5 * inch, height - 1 * inch, f"FACTURA N° {pedido.id}")
+        p.setFont("Helvetica", 10)
+        p.drawRightString(7.5 * inch, height - 1.2 * inch, f"Fecha: {pedido.fecha_pedido.strftime('%d/%m/%Y %H:%M')}")
+        p.drawRightString(7.5 * inch, height - 1.35 * inch, f"Vendedor: {pedido.vendedor.username if pedido.vendedor else 'Sistema'}")
+
+        # Cliente
+        p.line(1 * inch, height - 1.7 * inch, 7.5 * inch, height - 1.7 * inch)
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(1 * inch, height - 1.9 * inch, "CLIENTE:")
+        
+        p.setFont("Helvetica", 10)
+        cliente_nom = pedido.cliente.nombre if pedido.cliente else "Cliente General"
+        cliente_ruc = pedido.cliente.ruc if pedido.cliente and pedido.cliente.ruc else "N/A"
+        
+        p.drawString(1.8 * inch, height - 1.9 * inch, cliente_nom)
+        p.drawString(5 * inch, height - 1.9 * inch, f"RUC/Cédula: {cliente_ruc}")
+        
+        # Tabla
+        y = height - 2.3 * inch
+        p.setFillColorRGB(0.9, 0.9, 0.9)
+        p.rect(1 * inch, y - 5, 6.5 * inch, 15, fill=1, stroke=0)
+        p.setFillColorRGB(0, 0, 0)
+        
+        p.setFont("Helvetica-Bold", 9)
+        p.drawString(1.1 * inch, y, "CANT")
+        p.drawString(1.8 * inch, y, "DESCRIPCIÓN")
+        p.drawString(5.0 * inch, y, "PRECIO UNIT")
+        p.drawString(6.5 * inch, y, "SUBTOTAL")
+        
+        y -= 20
+        p.setFont("Helvetica", 9)
+
+        for item in detalles:
+            nombre = item.producto.nombre[:45]
+            sub = item.cantidad * item.precio_unitario
             
-            # Datos para Template
-            total_pagar = p.total
-            subtotal = total_pagar / Decimal('1.15')
-            iva = total_pagar - subtotal
-            cliente_nombre = p.cliente.nombre if p.cliente else "Mostrador"
+            p.drawString(1.2 * inch, y, str(item.cantidad))
+            p.drawString(1.8 * inch, y, nombre)
+            p.drawString(5.0 * inch, y, f"C$ {item.precio_unitario:.2f}")
+            p.drawString(6.5 * inch, y, f"C$ {sub:.2f}")
+            y -= 15
             
-            html = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Helvetica; font-size: 12px; }}
-                    .header {{ background: #1a3c6e; color: white; padding: 10px; }}
-                    table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-                    th {{ background: #eee; padding: 5px; text-align: left; }}
-                    td {{ padding: 5px; border-bottom: 1px solid #ddd; }}
-                    .total {{ text-align: right; font-weight: bold; margin-top: 20px; font-size: 14px; }}
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h1>FERRETERIA BRANESCA</h1>
-                    <p>Factura #{p.id} | Fecha: {p.fecha_pedido.strftime('%d/%m/%Y')}</p>
-                </div>
-                <p><strong>Cliente:</strong> {cliente_nombre}</p>
-                <p><strong>Vendedor:</strong> {p.vendedor.username if p.vendedor else 'Web'}</p>
-                
-                <table>
-                    <tr><th>Producto</th><th>Cant</th><th>Precio</th><th>Subtotal</th></tr>
-                    {''.join([f"<tr><td>{d.producto.nombre}</td><td>{d.cantidad}</td><td>{d.precio_unitario}</td><td>{d.cantidad*d.precio_unitario}</td></tr>" for d in detalles])}
-                </table>
-                
-                <div class="total">
-                    <p>Subtotal: C$ {subtotal:.2f}</p>
-                    <p>IVA (15%): C$ {iva:.2f}</p>
-                    <p>TOTAL: C$ {total_pagar:.2f}</p>
-                </div>
-            </body>
-            </html>
-            """
-            res = HttpResponse(content_type='application/pdf')
-            res['Content-Disposition'] = f'attachment; filename="Factura_{p.id}.pdf"'
-            pisa.CreatePDF(html, dest=res)
-            return res
-        except Exception as e: return Response({'error': str(e)}, 400)
+            if y < 1 * inch:
+                p.showPage()
+                y = height - 1 * inch
+
+        # Totales
+        p.line(1 * inch, y - 5, 7.5 * inch, y - 5)
+        y -= 25
+        
+        total_final = pedido.total
+        subtotal_calc = total_final / Decimal('1.15')
+        iva_calc = total_final - subtotal_calc
+
+        p.setFont("Helvetica-Bold", 10)
+        p.drawRightString(6.0 * inch, y, "SUBTOTAL:")
+        p.drawRightString(7.5 * inch, y, f"C$ {subtotal_calc:.2f}")
+        y -= 15
+        p.drawRightString(6.0 * inch, y, "IVA (15%):")
+        p.drawRightString(7.5 * inch, y, f"C$ {iva_calc:.2f}")
+        y -= 15
+        p.setFont("Helvetica-Bold", 12)
+        p.drawRightString(6.0 * inch, y, "TOTAL:")
+        p.drawRightString(7.5 * inch, y, f"C$ {total_final:.2f}")
+
+        y -= 40
+        p.setFont("Helvetica-Oblique", 9)
+        p.drawString(1 * inch, y, f"Método de Pago: {pedido.metodo_pago}")
+        
+        p.setFont("Helvetica", 8)
+        p.drawCentredString(width / 2, 0.5 * inch, "Gracias por su compra en Ferretería El Shaday - ¡Dios le bendiga!")
+
+        p.showPage()
+        p.save()
+
+        buffer.seek(0)
+        response = HttpResponse(buffer, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="factura_{pedido.id}.pdf"'
+        return response
 
 class CarritoViewSet(viewsets.ModelViewSet):
     serializer_class = CarritoItemSerializer
@@ -319,14 +385,11 @@ class RecomendacionesList(generics.ListAPIView):
 class HistorialPedidosView(generics.ListAPIView):
     serializer_class = PedidoSerializer
     permission_classes = [permissions.IsAuthenticated]
-    # Aquí un usuario normal vería sus pedidos si tuviera Cliente asociado. 
-    # Por ahora devolvemos vacío para evitar errores.
     def get_queryset(self): return Pedido.objects.none()
 
 class CancelarPedidoView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request, pedido_id):
-        # Lógica de cancelación simple
         try:
             p = Pedido.objects.get(id=pedido_id)
             if p.estado == 'PENDIENTE':
@@ -335,3 +398,60 @@ class CancelarPedidoView(APIView):
                 return Response({'status': 'Cancelado'})
             return Response({'error': 'No se puede cancelar'}, 400)
         except: return Response({'error': 'No encontrado'}, 404)
+
+# VISTA DE ABONO
+class RegistrarAbonoView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request):
+        cliente_id = request.data.get('cliente_id')
+        monto_abono = Decimal(request.data.get('monto', 0))
+
+        if monto_abono <= 0:
+            return Response({'error': 'El monto debe ser mayor a 0'}, status=400)
+
+        try:
+            cliente = Cliente.objects.get(id=cliente_id)
+            # Buscar facturas pendientes ordenadas por fecha (FIFO)
+            pendientes = Pedido.objects.filter(cliente=cliente, estado='PENDIENTE').order_by('fecha_pedido')
+
+            if not pendientes.exists():
+                return Response({'error': 'Este cliente no tiene deuda pendiente.'}, status=400)
+
+            abonado_total = 0
+            saldo_restante = monto_abono
+
+            with transaction.atomic():
+                for pedido in pendientes:
+                    if saldo_restante <= 0:
+                        break
+
+                    deuda_pedido = pedido.total - pedido.monto_recibido
+                    
+                    if saldo_restante >= deuda_pedido:
+                        # Paga completo
+                        pedido.monto_recibido += deuda_pedido
+                        pedido.estado = 'PAGADO'
+                        pedido.save()
+                        saldo_restante -= deuda_pedido
+                        abonado_total += deuda_pedido
+                    else:
+                        # Abono parcial
+                        pedido.monto_recibido += saldo_restante
+                        pedido.save()
+                        abonado_total += saldo_restante
+                        saldo_restante = 0
+
+                cambio = monto_abono - abonado_total
+
+            return Response({
+                'mensaje': 'Abono registrado correctamente',
+                'monto_aplicado': abonado_total,
+                'cambio_devuelto': cambio,
+                'nueva_deuda': cliente.deuda_actual
+            })
+
+        except Cliente.DoesNotExist:
+            return Response({'error': 'Cliente no encontrado'}, 404)
+        except Exception as e:
+            return Response({'error': str(e)}, 400)

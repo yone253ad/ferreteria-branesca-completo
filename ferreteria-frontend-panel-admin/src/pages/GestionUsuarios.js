@@ -10,8 +10,10 @@ function GestionUsuarios() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  
+  // Estado para errores visuales
+  const [errors, setErrors] = useState({});
 
-  // LIMPIEZA: Ya no necesitamos campos de crédito aquí
   const [formData, setFormData] = useState({
     username: '', email: '', password: '', rol: 'VENDEDOR', sucursal: ''
   });
@@ -43,25 +45,54 @@ function GestionUsuarios() {
       } catch(e) { console.error(e); }
   };
 
+  // --- VALIDACIONES ---
+  const validateForm = () => {
+    const newErrors = {};
+    
+    // 1. Usuario
+    if (!formData.username.trim()) newErrors.username = "El usuario es obligatorio.";
+    if (formData.username.includes(" ")) newErrors.username = "No debe tener espacios.";
+
+    // 2. Email
+    if (!formData.email) newErrors.email = "Email obligatorio.";
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = "Formato inválido.";
+
+    // 3. Contraseña (Mínimo 5 chars si se escribe)
+    if (formData.password && formData.password.length < 5) {
+        newErrors.password = "Mínimo 5 caracteres.";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!validateForm()) return;
+
     try {
       const dataToSend = { ...formData, sucursal: formData.sucursal || null };
       await auth.axiosApi.post('/gestion-usuarios/', dataToSend);
       alert('¡Usuario creado con éxito!');
       setShowModal(false);
       setFormData({ username: '', email: '', password: '', rol: 'VENDEDOR', sucursal: '' });
+      setErrors({});
       reloadData();
-    } catch (err) { alert("Error al crear usuario. Verifica que no exista el nombre."); }
+    } catch (err) { alert("Error: El Usuario o Email ya existen."); }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm("¿Eliminar usuario?")) {
+    if (window.confirm("¿Seguro de eliminar este usuario?")) {
       try {
         await auth.axiosApi.delete(`/gestion-usuarios/${id}/`);
         reloadData();
       } catch (err) { alert("No se pudo eliminar."); }
     }
+  };
+
+  const handleChange = (field, value) => {
+      setFormData({ ...formData, [field]: value });
+      if (errors[field]) setErrors({ ...errors, [field]: null });
   };
 
   const getSucursalName = (id) => {
@@ -89,7 +120,7 @@ function GestionUsuarios() {
             <h2>Gestión de Personal</h2>
             <p className="text-muted mb-0">Administración de Vendedores y Gerentes</p>
         </div>
-        <Button variant="success" onClick={() => setShowModal(true)}>+ Nuevo Empleado</Button>
+        <Button variant="success" onClick={() => { setErrors({}); setShowModal(true); }}>+ Nuevo Empleado</Button>
       </div>
 
       <Table striped bordered hover responsive className="bg-white shadow-sm">
@@ -114,23 +145,54 @@ function GestionUsuarios() {
         <Modal.Header closeButton><Modal.Title>Registrar Empleado</Modal.Title></Modal.Header>
         <Modal.Body>
           <Form onSubmit={handleSubmit}>
-            <Form.Group className="mb-3"><Form.Label>Usuario</Form.Label><Form.Control required value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} /></Form.Group>
-            <Form.Group className="mb-3"><Form.Label>Email</Form.Label><Form.Control type="email" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></Form.Group>
-            <Form.Group className="mb-3"><Form.Label>Contraseña</Form.Label><Form.Control type="password" required value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} /></Form.Group>
+            <Form.Group className="mb-3">
+                <Form.Label>Usuario <span className="text-danger">*</span></Form.Label>
+                <Form.Control 
+                    value={formData.username} 
+                    onChange={e => handleChange('username', e.target.value)} 
+                    isInvalid={!!errors.username}
+                    placeholder="Ej: juanperez"
+                />
+                <Form.Control.Feedback type="invalid">{errors.username}</Form.Control.Feedback>
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+                <Form.Label>Email <span className="text-danger">*</span></Form.Label>
+                <Form.Control 
+                    type="email" 
+                    value={formData.email} 
+                    onChange={e => handleChange('email', e.target.value)} 
+                    isInvalid={!!errors.email}
+                    placeholder="correo@empresa.com"
+                />
+                <Form.Control.Feedback type="invalid">{errors.email}</Form.Control.Feedback>
+            </Form.Group>
+
+            <Form.Group className="mb-3">
+                <Form.Label>Contraseña <span className="text-danger">*</span></Form.Label>
+                <Form.Control 
+                    type="password" 
+                    value={formData.password} 
+                    onChange={e => handleChange('password', e.target.value)} 
+                    isInvalid={!!errors.password}
+                />
+                <Form.Control.Feedback type="invalid">{errors.password}</Form.Control.Feedback>
+                <Form.Text className="text-muted">Mínimo 5 caracteres.</Form.Text>
+            </Form.Group>
+
             <div className="row">
                 <div className="col-md-6">
                     <Form.Group className="mb-3"><Form.Label>Rol</Form.Label>
-                      <Form.Select value={formData.rol} onChange={e => setFormData({...formData, rol: e.target.value})}>
+                      <Form.Select value={formData.rol} onChange={e => handleChange('rol', e.target.value)}>
                         <option value="VENDEDOR">Vendedor</option>
                         <option value="GERENTE">Gerente</option>
                         <option value="ADMIN">Administrador</option>
-                        {/* Se eliminó CLIENTE de aquí */}
                       </Form.Select>
                     </Form.Group>
                 </div>
                 <div className="col-md-6">
                     <Form.Group className="mb-3"><Form.Label>Sucursal</Form.Label>
-                      <Form.Select value={formData.sucursal} onChange={e => setFormData({...formData, sucursal: e.target.value})} disabled={formData.rol === 'ADMIN'}>
+                      <Form.Select value={formData.sucursal} onChange={e => handleChange('sucursal', e.target.value)} disabled={formData.rol === 'ADMIN'}>
                         <option value="">-- Global --</option>
                         {sucursales.map(suc => (<option key={suc.id} value={suc.id}>{suc.nombre}</option>))}
                       </Form.Select>

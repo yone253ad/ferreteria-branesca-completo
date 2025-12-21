@@ -9,6 +9,8 @@ from django.db.models import Sum
 # --- Validadores ---
 solo_letras = RegexValidator(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$', 'Solo se permiten letras y espacios.')
 solo_numeros = RegexValidator(r'^\d+$', 'Solo se permiten números.')
+# Validacion RUC simple (letras, numeros y guiones)
+formato_ruc = RegexValidator(r'^[a-zA-Z0-9-]+$', 'Formato inválido para RUC/Cédula.')
 
 # 1. Sucursal
 class Sucursal(models.Model):
@@ -22,7 +24,6 @@ class Usuario(AbstractUser):
         ADMIN = 'ADMIN', 'Administrador'
         VENDEDOR = 'VENDEDOR', 'Vendedor'
         GERENTE = 'GERENTE', 'Gerente'
-        # Eliminamos 'CLIENTE' de aquí porque ahora tienen su propia tabla
 
     rol = models.CharField(max_length=10, choices=Rol.choices, default=Rol.VENDEDOR)
     sucursal = models.ForeignKey('Sucursal', on_delete=models.SET_NULL, null=True, blank=True)
@@ -32,8 +33,8 @@ class Usuario(AbstractUser):
 # 3. Cliente (CARTERA COMERCIAL)
 class Cliente(models.Model):
     nombre = models.CharField(max_length=200, verbose_name="Nombre o Razón Social")
-    ruc = models.CharField(max_length=20, blank=True, null=True, verbose_name="RUC/Cédula")
-    telefono = models.CharField(max_length=20, blank=True, null=True)
+    ruc = models.CharField(max_length=20, blank=True, null=True, verbose_name="RUC/Cédula", validators=[formato_ruc])
+    telefono = models.CharField(max_length=20, blank=True, null=True, validators=[solo_numeros])
     direccion = models.TextField(blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     
@@ -47,17 +48,19 @@ class Cliente(models.Model):
 
     @property
     def deuda_actual(self):
-        total = self.pedido_set.filter(estado='PENDIENTE').aggregate(Sum('total'))['total__sum']
-        return total or 0.00
+        # Lógica FIFO Real: Sumamos (Total - Lo pagado) de pedidos pendientes
+        pendientes = self.pedidos.filter(estado='PENDIENTE')
+        deuda = sum((p.total - p.monto_recibido) for p in pendientes)
+        return deuda
 
-# 4. Direccion (Vinculada a Cliente ahora)
+# 4. Direccion
 class Direccion(models.Model):
     cliente = models.ForeignKey(Cliente, related_name='direcciones', on_delete=models.CASCADE)
     nombre_completo = models.CharField(max_length=200, validators=[solo_letras])
     direccion = models.TextField()
     ciudad = models.CharField(max_length=100)
     departamento = models.CharField(max_length=100)
-    telefono = models.CharField(max_length=20)
+    telefono = models.CharField(max_length=20, validators=[solo_numeros])
     def __str__(self): return f"{self.direccion}, {self.ciudad}"
 
 # 5. Categoria
@@ -100,9 +103,7 @@ class Pedido(models.Model):
         CANCELADO = 'CANCELADO', 'Cancelado'
         DEVOLUCION = 'DEVOLUCION', 'Devolución'
     
-    # RELACIÓN CORRECTA: Apunta a Cliente
     cliente = models.ForeignKey(Cliente, related_name='pedidos', on_delete=models.SET_NULL, null=True, blank=True)
-    # Vendedor sigue siendo Usuario (el empleado)
     vendedor = models.ForeignKey(Usuario, related_name='ventas_realizadas', on_delete=models.SET_NULL, null=True, blank=True)
     
     sucursal = models.ForeignKey(Sucursal, on_delete=models.SET_NULL, null=True, blank=True)
@@ -124,9 +125,17 @@ class Pedido(models.Model):
     history = HistoricalRecords()
 
     def save(self, *args, **kwargs):
-        # Calculamos vencimiento basado en el CLIENTE (no usuario)
+        # Calculamos vencimiento basado en el CLIENTE
         if not self.id and self.cliente and self.cliente.dias_credito > 0:
             self.fecha_vencimiento = date.today() + timedelta(days=self.cliente.dias_credito)
+            
+        # Si es venta a crédito, nace como PENDIENTE
+        if self.metodo_pago == 'CREDITO':
+            self.estado = 'PENDIENTE'
+        elif self.metodo_pago == 'EFECTIVO' or self.metodo_pago == 'TARJETA':
+            # Si paga de una vez, nace como PAGADO
+            self.estado = 'PAGADO'
+
         super().save(*args, **kwargs)
 
     @property
@@ -145,7 +154,7 @@ class DetallePedido(models.Model):
     class Meta: unique_together = ('pedido', 'producto')
     def __str__(self): return f"{self.cantidad} x {self.producto.nombre}"
 
-# 10. CarritoItem (RECUPERADO)
+# 10. CarritoItem
 class CarritoItem(models.Model):
     usuario = models.ForeignKey(Usuario, related_name='carrito', on_delete=models.CASCADE)
     producto = models.ForeignKey(Producto, on_delete=models.CASCADE)
@@ -154,7 +163,7 @@ class CarritoItem(models.Model):
     class Meta: unique_together = ('usuario', 'producto')
     def __str__(self): return f"{self.usuario.username} - {self.producto.nombre}"
 
-# 11. Recomendacion (RECUPERADO)
+# 11. Recomendacion
 class Recomendacion(models.Model):
     producto_base = models.ForeignKey(Producto, related_name='recomendaciones_base', on_delete=models.CASCADE)
     producto_recomendado = models.ForeignKey(Producto, related_name='recomendaciones_sugeridas', on_delete=models.CASCADE)
